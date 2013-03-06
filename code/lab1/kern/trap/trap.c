@@ -10,6 +10,7 @@
 #include <kdebug.h>
 
 #define TICK_NUM 100
+int kern_init(void) __attribute__((noreturn));
 
 static void print_ticks() {
     cprintf("%d ticks\n",TICK_NUM);
@@ -50,9 +51,11 @@ idt_init(void) {
 	extern uintptr_t __vectors[];
 	int i;
 	for (i = 0; i < sizeof(idt) / sizeof(struct gatedesc); i++){
-		SETGATE(idt[i], 1 ,GD_KTEXT ,__vectors[i], DPL_KERNEL);
+		SETGATE(idt[i], 0 ,GD_KTEXT ,__vectors[i], DPL_KERNEL);
 	}
 	SETGATE(idt[T_SYSCALL], 1, GD_KTEXT, __vectors[T_SYSCALL], DPL_USER);
+	SETGATE(idt[T_SWITCH_TOK], 1, GD_KTEXT, __vectors[T_SWITCH_TOK], DPL_USER);
+	lidt(&idt_pd);
 	lidt(&idt_pd);
 }
 
@@ -170,8 +173,30 @@ trap_dispatch(struct trapframe *tf) {
         break;
     //LAB1 CHALLENGE 1 : YOUR CODE you should modify below codes.
     case T_SWITCH_TOU:
+		asm volatile(
+				"cli;"
+				);
+		tf->tf_ds =	0x23;
+		tf->tf_es =	0x23;
+		tf->tf_fs =	0x23;
+		tf->tf_gs =	0x23;
+		tf->tf_eflags = tf->tf_eflags | 0x200;
+		tf->tf_eflags = tf->tf_eflags | 0x3000;
+		tf->tf_ss = 0x23;
+		tf->tf_cs = 0x1B;
+		break;
     case T_SWITCH_TOK:
-        panic("T_SWITCH_** ??\n");
+		asm volatile(
+				"cli;"
+				);
+		tf->tf_ds =	0x10;
+		tf->tf_es =	0x10;
+		tf->tf_fs =	0x10;
+		tf->tf_gs =	0x10;
+		tf->tf_eflags = tf->tf_eflags | 0x200;
+		tf->tf_eflags = tf->tf_eflags | 0x3000;
+		tf->tf_ss = 0x10;
+		tf->tf_cs = 0x8;
         break;
     case IRQ_OFFSET + IRQ_IDE1:
     case IRQ_OFFSET + IRQ_IDE2:
