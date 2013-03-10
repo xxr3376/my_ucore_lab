@@ -195,6 +195,8 @@ trap_dispatch(struct trapframe *tf) {
 		tf->tf_eflags = tf->tf_eflags & ~0x3000U | 0x1000U;
 		tf->tf_ss = 0x10;
 		tf->tf_cs = 0x8;
+		tf->tf_esp = tf->tf_regs.reg_eax;
+		cprintf("%08x\n",tf->tf_esp);
         break;
     case IRQ_OFFSET + IRQ_IDE1:
     case IRQ_OFFSET + IRQ_IDE2:

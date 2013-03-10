@@ -113,17 +113,19 @@ lab1_switch_to_user(void) {
 			:
 			: "i" (T_SWITCH_TOU)
 			);
-	cprintf("finish\n");
 }
 
 static void
 lab1_switch_to_kernel(void) {
 	//LAB1 CHALLENGE 1 :  TODO
+	uint32_t esp;
+	asm volatile( "movl %%esp, %0"
+			: "=a" (esp));
 	asm volatile( "int %0;"
+			"movl %1, %%esp"
 			:
-			: "i" (T_SWITCH_TOK)
+			: "i" (T_SWITCH_TOK), "a" (esp)
 			);
-	cprintf("finish\n");
 }
 
 static void
