@@ -36,7 +36,7 @@ static struct pseudodesc idt_pd = {
 /* idt_init - initialize IDT to each of the entry points in kern/trap/vectors.S */
 void
 idt_init(void) {
-     /* LAB1 YOUR CODE : STEP 2 */
+     /* LAB1 2010011358 : STEP 2 */
      /* (1) Where are the entry addrs of each Interrupt Service Routine (ISR)?
       *     All ISR's entry addrs are stored in __vectors. where is uintptr_t __vectors[] ?
       *     __vectors[] is in kern/trap/vector.S which is produced by tools/vector.c
@@ -48,6 +48,16 @@ idt_init(void) {
       *     You don't know the meaning of this instruction? just google it! and check the libs/x86.h to know more.
       *     Notice: the argument of lidt is idt_pd. try to find it!
       */
+	extern uintptr_t __vectors[];
+	int i;
+	for (i = 0; i < sizeof(idt) / sizeof(struct gatedesc); i++){
+		SETGATE(idt[i], 0 ,GD_KTEXT ,__vectors[i], DPL_KERNEL);
+	}
+	SETGATE(idt[T_SYSCALL], 1, GD_KTEXT, __vectors[T_SYSCALL], DPL_USER);
+	// this is for challenge
+	SETGATE(idt[T_SWITCH_TOK], 1, GD_KTEXT, __vectors[T_SWITCH_TOK], DPL_USER);
+
+	lidt(&idt_pd);
 }
 
 static const char *
@@ -168,6 +178,7 @@ trap_dispatch(struct trapframe *tf) {
 
     int ret;
 
+	static int counter = 0;
     switch (tf->tf_trapno) {
     case T_PGFLT:  //page fault
         if ((ret = pgfault_handler(tf)) != 0) {
@@ -180,12 +191,16 @@ trap_dispatch(struct trapframe *tf) {
     LAB3 : If some page replacement algorithm(such as CLOCK PRA) need tick to change the priority of pages, 
     then you can add code here. 
 #endif
-        /* LAB1 YOUR CODE : STEP 3 */
+        /* LAB1 2010011358: STEP 3 */
         /* handle the timer interrupt */
         /* (1) After a timer interrupt, you should record this event using a global variable (increase it), such as ticks in kern/driver/clock.c
          * (2) Every TICK_NUM cycle, you can print some info using a funciton, such as print_ticks().
          * (3) Too Simple? Yes, I think so!
          */
+		if (++counter == TICK_NUM){
+			counter = 0;
+			print_ticks();
+		}
         break;
     case IRQ_OFFSET + IRQ_COM1:
         c = cons_getc();
@@ -197,8 +212,27 @@ trap_dispatch(struct trapframe *tf) {
         break;
     //LAB1 CHALLENGE 1 : YOUR CODE you should modify below codes.
     case T_SWITCH_TOU:
+		asm volatile( "cli;");
+		tf->tf_ds =	0x23;
+		tf->tf_es =	0x23;
+		tf->tf_fs =	0x23;
+		tf->tf_gs =	0x23;
+		tf->tf_eflags = tf->tf_eflags | 0x200;
+		tf->tf_eflags = tf->tf_eflags | 0x3000;
+		tf->tf_ss = 0x23;
+		tf->tf_cs = 0x1B;
+		tf->tf_esp = tf->tf_regs.reg_eax;
+		break;
     case T_SWITCH_TOK:
-        panic("T_SWITCH_** ??\n");
+		asm volatile( "cli;");
+		tf->tf_ds =	0x10;
+		tf->tf_es =	0x10;
+		tf->tf_fs =	0x10;
+		tf->tf_gs =	0x10;
+		tf->tf_eflags = tf->tf_eflags | 0x200;
+		tf->tf_eflags = tf->tf_eflags & ~0x3000U | 0x1000U;
+		tf->tf_ss = 0x10;
+		tf->tf_cs = 0x8;
         break;
     case IRQ_OFFSET + IRQ_IDE1:
     case IRQ_OFFSET + IRQ_IDE2:
