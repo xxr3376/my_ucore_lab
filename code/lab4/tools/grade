@@ -334,7 +334,7 @@ quick_check 'check page table'                                  \
 
 pts=10
 quick_check 'check slob'                                        \
-    'check_slob() success'
+    'check_slob() success!'
 
 pts=25
 quick_check 'check vmm'                                         \
