@@ -56,7 +56,7 @@ idt_init(void) {
 	extern uintptr_t __vectors[];
 	int i;
 	for (i = 0; i < sizeof(idt) / sizeof(struct gatedesc); i++){
-		SETGATE(idt[i], 1 ,GD_KTEXT ,__vectors[i], DPL_KERNEL);
+		SETGATE(idt[i], 0 ,GD_KTEXT ,__vectors[i], DPL_KERNEL);
 	}
      /* LAB5 2010011358 */ 
      //you should update your lab1 code (just add ONE or TWO lines of code), let user app to use syscall to get the service of ucore
@@ -234,7 +234,7 @@ trap_dispatch(struct trapframe *tf) {
          */
 		if (++counter == TICK_NUM){
 			counter = 0;
-			print_ticks();
+			//print_ticks();
 			current->need_resched = 1;
 		}
   
