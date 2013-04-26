@@ -56,14 +56,12 @@ idt_init(void) {
 	extern uintptr_t __vectors[];
 	int i;
 	for (i = 0; i < sizeof(idt) / sizeof(struct gatedesc); i++){
-		SETGATE(idt[i], 0 ,GD_KTEXT ,__vectors[i], DPL_KERNEL);
+		SETGATE(idt[i], 1 ,GD_KTEXT ,__vectors[i], DPL_KERNEL);
 	}
      /* LAB5 2010011358 */ 
      //you should update your lab1 code (just add ONE or TWO lines of code), let user app to use syscall to get the service of ucore
      //so you should setup the syscall interrupt gate in here
 	SETGATE(idt[T_SYSCALL], 1, GD_KTEXT, __vectors[T_SYSCALL], DPL_USER);
-	// this is for challenge
-	SETGATE(idt[T_SWITCH_TOK], 1, GD_KTEXT, __vectors[T_SWITCH_TOK], DPL_USER);
 
 	lidt(&idt_pd);
 }
