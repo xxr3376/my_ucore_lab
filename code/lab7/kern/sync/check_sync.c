@@ -124,6 +124,14 @@ void phi_take_forks_condvar(int i) {
      // LAB7 EXERCISE1: YOUR CODE
      // I am hungry
      // try to get fork
+	 state_condvar[i] = HUNGRY;
+	 if ((state_condvar[LEFT] != EATING) && (state_condvar[RIGHT] != EATING)) {
+        cprintf("phi_test_condvar: state_condvar[%d] will eating\n",i);
+		 state_condvar[i] = EATING;
+	 }
+	 else{
+		 cond_wait(&(mtp->cv[i]));
+	 }
 //--------leave routine in monitor--------------
       if(mtp->next_count>0)
          up(&(mtp->next));
@@ -138,6 +146,9 @@ void phi_put_forks_condvar(int i) {
      // LAB7 EXERCISE1: YOUR CODE
      // I ate over
      // test left and right neighbors
+	 state_condvar[i] = THINKING;
+	 phi_test_condvar(LEFT);
+	 phi_test_condvar(RIGHT);
 //--------leave routine in monitor--------------
      if(mtp->next_count>0)
         up(&(mtp->next));
@@ -151,14 +162,15 @@ int philosopher_using_condvar(void * arg) { /* arg is the No. of philosopher 0~N
     int i, iter=0;
     i=(int)arg;
     cprintf("I am No.%d philosopher_condvar\n",i);
+	cprintf("Iter %d, No.%d philosopher_condvar is thinking\n",iter,i); /* thinking*/
     while(iter++<TIMES)
     { /* iterate*/
-        cprintf("Iter %d, No.%d philosopher_condvar is thinking\n",iter,i); /* thinking*/
         do_sleep(SLEEP_TIME);
         phi_take_forks_condvar(i); 
         /* need two forks, maybe blocked */
         cprintf("Iter %d, No.%d philosopher_condvar is eating\n",iter,i); /* eating*/
         do_sleep(SLEEP_TIME);
+        cprintf("Iter %d, No.%d philosopher_condvar is thinking\n",iter,i); /* thinking*/
         phi_put_forks_condvar(i); 
         /* return two forks back*/
     }
