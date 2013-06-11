@@ -1,0 +1,11 @@
+--- /dev/null
++++ kern/schedule/sched.c	2013-06-11 00:42:47.287614257 +0800
+@@ -49,7 +49,7 @@
+     sched_class = &default_sched_class;
+ 
+     rq = &__rq;
+-    rq->max_time_slice = 20;
++    rq->max_time_slice = MAX_TIME_SLICE;
+     sched_class->init(rq);
+ 
+     cprintf("sched class: %s\n", sched_class->name);

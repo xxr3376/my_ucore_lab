@@ -1,0 +1,737 @@
+diff -u -r ./kern/mm/default_pmm.c /home/ugeeker/my_ucore_lab/code/lab7/kern/mm/default_pmm.c
+--- ./kern/mm/default_pmm.c	2013-06-11 00:56:07.381404557 +0800
++++ /home/ugeeker/my_ucore_lab/code/lab7/kern/mm/default_pmm.c	2013-06-11 00:42:47.283614257 +0800
+@@ -9,7 +9,7 @@
+    usually split, and the remainder added to the list as another free block.
+    Please see Page 196~198, Section 8.2 of Yan Wei Ming's chinese book "Data Structure -- C programming language"
+ */
+-// LAB2 EXERCISE 1: YOUR CODE
++// LAB2 EXERCISE 1: 2010011358
+ // you should rewrite functions: default_init,default_init_memmap,default_alloc_pages, default_free_pages.
+ /*
+  * Details of FFMA
+@@ -96,12 +96,14 @@
+         }
+     }
+     if (page != NULL) {
+-        list_del(&(page->page_link));
++		list_entry_t* before = list_prev(le);
+         if (page->property > n) {
+             struct Page *p = page + n;
++			SetPageProperty(p);
+             p->property = page->property - n;
+-            list_add(&free_list, &(p->page_link));
+-    }
++            list_add(before, &(p->page_link));
++		}
++        list_del(&(page->page_link));
+         nr_free -= n;
+         ClearPageProperty(page);
+     }
+@@ -119,24 +121,30 @@
+     }
+     base->property = n;
+     SetPageProperty(base);
+-    list_entry_t *le = list_next(&free_list);
+-    while (le != &free_list) {
+-        p = le2page(le, page_link);
+-        le = list_next(le);
+-        if (base + base->property == p) {
+-            base->property += p->property;
+-            ClearPageProperty(p);
+-            list_del(&(p->page_link));
+-        }
+-        else if (p + p->property == base) {
+-            p->property += base->property;
+-            ClearPageProperty(base);
+-            base = p;
+-            list_del(&(p->page_link));
+-        }
+-    }
+-    nr_free += n;
+-    list_add(&free_list, &(base->page_link));
++	nr_free += n;
++	list_entry_t *le = list_next(&free_list);
++	while (le != &free_list) {
++		p = le2page(le, page_link);
++		le = list_next(le);
++		if (base + base->property == p) {
++			base->property += p->property;
++			ClearPageProperty(p);
++			list_del(&(p->page_link));
++			break;
++		}
++		else if (p + p->property == base) {
++			p->property += base->property;
++			ClearPageProperty(base);
++			base = p;
++			list_del(&(p->page_link));
++		}
++		else if (p > base){
++			le = list_prev(le);
++			break;
++		}
++	}
++	list_add_before(le, &(base->page_link));
++
+ }
+ 
+ static size_t
+diff -u -r ./kern/mm/pmm.c /home/ugeeker/my_ucore_lab/code/lab7/kern/mm/pmm.c
+--- ./kern/mm/pmm.c	2013-06-11 00:56:07.381404557 +0800
++++ /home/ugeeker/my_ucore_lab/code/lab7/kern/mm/pmm.c	2013-06-11 00:42:47.283614257 +0800
+@@ -363,7 +363,7 @@
+ // return vaule: the kernel virtual address of this pte
+ pte_t *
+ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
+-    /* LAB2 EXERCISE 2: YOUR CODE
++    /* LAB2 EXERCISE 2: 2010011358
+      *
+      * If you need to visit a physical address, please use KADDR()
+      * please read pmm.h for useful macros
+@@ -396,6 +396,20 @@
+     }
+     return NULL;          // (8) return page table entry
+ #endif
++	pde_t *pdep = PDX(la) + pgdir;
++	if (~(*pdep) & PTE_P){
++		if (create){
++			struct Page* p = alloc_page();
++			set_page_ref(p, 1);
++			uintptr_t pa = page2pa(p);
++			memset(KADDR(pa), 0, PGSIZE);
++			*pdep = pa | PTE_USER;
++		}
++		else{
++			return NULL;	// not create then return NULL
++		}
++	}
++	return (pte_t*)KADDR(PDE_ADDR(*pdep)) + PTX(la);
+ }
+ 
+ //get_page - get related Page struct for linear address la using PDT pgdir
+@@ -416,7 +430,7 @@
+ //note: PT is changed, so the TLB need to be invalidate 
+ static inline void
+ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
+-    /* LAB2 EXERCISE 3: YOUR CODE
++    /* LAB2 EXERCISE 3: 2010011358
+      *
+      * Please check if ptep is valid, and tlb must be manually updated if mapping is updated
+      *
+@@ -441,6 +455,14 @@
+                                   //(6) flush tlb
+     }
+ #endif
++	if (*ptep & PTE_P){
++		struct Page *p = pte2page(*ptep);
++		if (page_ref_dec(p) == 0){	//decrease ref and judge whether = 0
++			free_page(p);
++		}
++		*ptep = 0;
++		tlb_invalidate(pgdir, la);
++	}
+ }
+ 
+ void
+@@ -508,7 +530,7 @@
+         assert(page!=NULL);
+         assert(npage!=NULL);
+         int ret=0;
+-        /* LAB5:EXERCISE2 YOUR CODE
++        /* LAB5:EXERCISE2 2010011358
+          * replicate content of page to npage, build the map of phy addr of nage with the linear addr start
+          *
+          * Some Useful MACROs and DEFINEs, you can use them in below implementation.
+@@ -522,6 +544,10 @@
+          * (3) memory copy from src_kvaddr to dst_kvaddr, size is PGSIZE
+          * (4) build the map of phy addr of  nage with the linear addr start
+          */
++		uintptr_t src_kvaddr = page2kva(page);
++		uintptr_t dst_kvaddr = page2kva(npage);
++		memcpy(dst_kvaddr, src_kvaddr, PGSIZE);
++		ret = page_insert(to, npage, start, perm);
+         assert(ret == 0);
+         }
+         start += PGSIZE;
+diff -u -r ./kern/mm/swap_fifo.c /home/ugeeker/my_ucore_lab/code/lab7/kern/mm/swap_fifo.c
+--- ./kern/mm/swap_fifo.c	2013-06-11 00:56:07.381404557 +0800
++++ /home/ugeeker/my_ucore_lab/code/lab7/kern/mm/swap_fifo.c	2013-06-11 00:42:47.283614257 +0800
+@@ -49,8 +49,9 @@
+  
+     assert(entry != NULL && head != NULL);
+     //record the page access situlation
+-    /*LAB3 EXERCISE 2: YOUR CODE*/ 
++    /*LAB3 EXERCISE 2: 2010011358*/ 
+     //(1)link the most recent arrival page at the back of the pra_list_head qeueue.
++	list_add_before(head, entry);
+     return 0;
+ }
+ /*
+@@ -64,9 +65,12 @@
+          assert(head != NULL);
+      assert(in_tick==0);
+      /* Select the victim */
+-     /*LAB3 EXERCISE 2: YOUR CODE*/ 
++     /*LAB3 EXERCISE 2: */ 
+      //(1)  unlink the  earliest arrival page in front of pra_list_head qeueue
+      //(2)  set the addr of addr of this page to ptr_page
++	 list_entry_t *selected=list_next(head);
++	 *ptr_page = le2page(selected, pra_page_link);
++	 list_del(selected);
+      return 0;
+ }
+ 
+diff -u -r ./kern/mm/vmm.c /home/ugeeker/my_ucore_lab/code/lab7/kern/mm/vmm.c
+--- ./kern/mm/vmm.c	2013-06-11 00:56:07.381404557 +0800
++++ /home/ugeeker/my_ucore_lab/code/lab7/kern/mm/vmm.c	2013-06-11 00:42:47.287614257 +0800
+@@ -420,7 +420,7 @@
+     ret = -E_NO_MEM;
+ 
+     pte_t *ptep=NULL;
+-    /*LAB3 EXERCISE 1: YOUR CODE
++    /*LAB3 EXERCISE 1: 2010011358
+     * Maybe you want help comment, BELOW comments can help you finish the code
+     *
+     * Some Useful MACROs and DEFINEs, you can use them in below implementation.
+@@ -437,15 +437,16 @@
+     *   mm->pgdir : the PDT of these vma
+     *
+     */
+-#if 0
+-    /*LAB3 EXERCISE 1: YOUR CODE*/
+-    ptep = ???              //(1) try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
++    /*LAB3 EXERCISE 1: 2010011358*/
++    ptep = get_pte(mm->pgdir, addr, 1);              //(1) try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
+     if (*ptep == 0) {
++		struct Page* p = pgdir_alloc_page(mm->pgdir, addr, perm);
++		if (p == NULL)
++			goto failed;
+                             //(2) if the phy addr isn't exist, then alloc a page & map the phy addr with logical addr
+-
+     }
+     else {
+-    /*LAB3 EXERCISE 2: YOUR CODE
++    /*LAB3 EXERCISE 2: 2010011358
+     * Now we think this pte is a  swap entry, we should load data from disk to a page with phy addr,
+     * and map the phy addr with logical addr, trigger swap manager to record the access situation of this page.
+     *
+@@ -468,6 +469,11 @@
+         if(swap_init_ok) {
+             struct Page *page=NULL;
+                                     //(1）According to the mm AND addr, try to load the content of right disk page
++			if (swap_in(mm, addr, &page) != 0)
++				goto failed;
++			page_insert(mm->pgdir, page, addr, perm | PTE_P);
++			*ptep = page2pa(page) | perm | PTE_P;
++			swap_map_swappable(mm, addr, page, 1);
+                                     //    into the memory which page managed.
+                                     //(2) According to the mm, addr AND page, setup the map of phy addr <---> logical addr
+                                     //(3) make the page swappable.
+@@ -478,7 +484,6 @@
+             goto failed;
+         }
+    }
+-#endif
+    ret = 0;
+ failed:
+     return ret;
+diff -u -r ./kern/process/proc.c /home/ugeeker/my_ucore_lab/code/lab7/kern/process/proc.c
+--- ./kern/process/proc.c	2013-06-11 00:56:07.381404557 +0800
++++ /home/ugeeker/my_ucore_lab/code/lab7/kern/process/proc.c	2013-06-11 00:42:47.287614257 +0800
+@@ -87,7 +87,7 @@
+ alloc_proc(void) {
+     struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
+     if (proc != NULL) {
+-    //LAB4:EXERCISE1 YOUR CODE
++    //LAB4:EXERCISE1 2010011358
+     /*
+      * below fields in proc_struct need to be initialized
+      *       enum proc_state state;                      // Process state
+@@ -103,12 +103,31 @@
+      *       uint32_t flags;                             // Process flag
+      *       char name[PROC_NAME_LEN + 1];               // Process name
+      */
+-     //LAB5 YOUR CODE : (update LAB4 steps)
++        memset(proc, 0, sizeof(struct proc_struct));
++        proc->state = PROC_UNINIT;
++        proc->pid = -1;
++        proc->runs = 0;
++        proc->kstack = 0;
++        proc->need_resched = 0;
++        proc->parent = NULL;
++        proc->mm = NULL;
++        memset(&(proc->context), 0, sizeof(struct context));
++        proc->tf = NULL;
++        proc->cr3 = boot_cr3;
++        proc->flags = 0;
++        set_proc_name(proc, "");
++        list_init(&proc->list_link);
++        list_init(&proc->hash_link);
++     //LAB5 2010011358 : (update LAB4 steps)
+     /*
+      * below fields(add in LAB5) in proc_struct need to be initialized	
+      *       uint32_t wait_state;                        // waiting state
+      *       struct proc_struct *cptr, *yptr, *optr;     // relations between processes
+ 	 */
++		proc->wait_state = 0;
++		proc->cptr = NULL;
++		proc->yptr = NULL;
++		proc->optr = NULL;
+      //LAB6 YOUR CODE : (update LAB5 steps)
+     /*
+      * below fields(add in LAB6) in proc_struct need to be initialized
+@@ -119,6 +138,11 @@
+      *     uint32_t lab6_stride;                       // FOR LAB6 ONLY: the current stride of the process
+      *     uint32_t lab6_priority;                     // FOR LAB6 ONLY: the priority of process, set by lab6_set_priority(uint32_t)
+      */
++		proc->rq = NULL;
++		list_init(&proc->run_link);
++		proc->time_slice = 0;
++		proc->lab6_stride = 0;
++		proc->lab6_priority = 1;
+     }
+     return proc;
+ }
+@@ -380,7 +404,7 @@
+         goto fork_out;
+     }
+     ret = -E_NO_MEM;
+-    //LAB4:EXERCISE2 YOUR CODE
++    //LAB4:EXERCISE2 2010011358
+     /*
+      * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
+      * MACROs or Functions:
+@@ -405,15 +429,36 @@
+     //    5. insert proc_struct into hash_list && proc_list
+     //    6. call wakup_proc to make the new child process RUNNABLE
+     //    7. set ret vaule using child proc's pid
+-
+-	//LAB5 YOUR CODE : (update LAB4 steps)
++	//LAB5 2010011358 : (update LAB4 steps)
+    /* Some Functions
+     *    set_links:  set the relation links of process.  ALSO SEE: remove_links:  lean the relation links of process 
+     *    -------------------
+ 	*    update step 1: set child proc's parent to current process, make sure current process's wait_state is 0
+ 	*    update step 5: insert proc_struct into hash_list && proc_list, set the relation links of process
+     */
++	proc = alloc_proc();
++	if (proc == NULL){
++		goto fork_out;
++	}
++	proc->parent = current;
++	if (setup_kstack(proc)){
++		goto bad_fork_cleanup_proc;
++	}
++	if (copy_mm(clone_flags, proc)){
++		goto bad_fork_cleanup_kstack;
++	}
++	copy_thread(proc, stack, tf);
++	//TODO make sure current process's wait_state is 0
+ 	
++	bool intr_flag;
++	local_intr_save(intr_flag);
++	proc->pid = get_pid();
++	hash_proc(proc);
++	set_links(proc);
++	local_intr_restore(intr_flag);
++
++	wakeup_proc(proc);
++	ret = proc->pid;
+ fork_out:
+     return ret;
+ 
+@@ -603,7 +648,7 @@
+     //(6) setup trapframe for user environment
+     struct trapframe *tf = current->tf;
+     memset(tf, 0, sizeof(struct trapframe));
+-    /* LAB5:EXERCISE1 YOUR CODE
++    /* LAB5:EXERCISE1 2010011358
+      * should set tf_cs,tf_ds,tf_es,tf_ss,tf_esp,tf_eip,tf_eflags
+      * NOTICE: If we set trapframe correctly, then the user level process can return to USER MODE from kernel. So
+      *          tf_cs should be USER_CS segment (see memlayout.h)
+@@ -612,6 +657,13 @@
+      *          tf_eip should be the entry point of this binary program (elf->e_entry)
+      *          tf_eflags should be set to enable computer to produce Interrupt
+      */
++	tf->tf_cs = USER_CS;
++	tf->tf_ds = USER_DS;
++	tf->tf_es = USER_DS;
++	tf->tf_ss = USER_DS;
++	tf->tf_esp = USTACKTOP;
++	tf->tf_eip = elf->e_entry;
++	tf->tf_eflags |= FL_IF;
+     ret = 0;
+ out:
+     return ret;
+diff -u -r ./kern/schedule/default_sched.c /home/ugeeker/my_ucore_lab/code/lab7/kern/schedule/default_sched.c
+--- ./kern/schedule/default_sched.c	2013-06-11 00:56:07.381404557 +0800
++++ /home/ugeeker/my_ucore_lab/code/lab7/kern/schedule/default_sched.c	2013-06-11 00:42:47.287614257 +0800
+@@ -4,55 +4,152 @@
+ #include <assert.h>
+ #include <default_sched.h>
+ 
+-static void
+-RR_init(struct run_queue *rq) {
+-    list_init(&(rq->run_list));
+-    rq->proc_num = 0;
++#define USE_SKEW_HEAP 1
++
++/* You should define the BigStride constant here*/
++/* LAB6: 2010011358 */
++#define BIG_STRIDE 1024   /* you should give a value, and is ??? */
++
++/* The compare function for two skew_heap_node_t's and the
++ * corresponding procs*/
++static int
++proc_stride_comp_f(void *a, void *b)
++{
++     struct proc_struct *p = le2proc(a, lab6_run_pool);
++     struct proc_struct *q = le2proc(b, lab6_run_pool);
++     int32_t c = p->lab6_stride - q->lab6_stride;
++     if (c > 0) return 1;
++     else if (c == 0) return 0;
++     else return -1;
+ }
+ 
++/*
++ * member variables, including:
++ *
++ *   - run_list: should be a empty list after initialization.
++ *   - lab6_run_pool: NULL
++ *   - proc_num: 0
++ *   - max_time_slice: no need here, the variable would be assigned by the caller.
++ *
++ * hint: see libs/list.h for routines of the list structures.
++ */
+ static void
+-RR_enqueue(struct run_queue *rq, struct proc_struct *proc) {
+-    assert(list_empty(&(proc->run_link)));
+-    list_add_before(&(rq->run_list), &(proc->run_link));
+-    if (proc->time_slice == 0 || proc->time_slice > rq->max_time_slice) {
+-        proc->time_slice = rq->max_time_slice;
+-    }
+-    proc->rq = rq;
+-    rq->proc_num ++;
++stride_init(struct run_queue *rq) {
++     /* LAB6: 2010011358
++      * (1) init the ready process list: rq->run_list
++      * (2) init the run pool: rq->lab6_run_pool
++      * (3) set number of process: rq->proc_num to 0       
++      */
++
++	list_init(&rq->run_list);
++	rq->lab6_run_pool = NULL;
++	rq->proc_num = 0;
++	rq->max_time_slice = 8;
+ }
+ 
++/*
++ * stride_enqueue inserts the process ``proc'' into the run-queue
++ * ``rq''. The procedure should verify/initialize the relevant members
++ * of ``proc'', and then put the ``lab6_run_pool'' node into the
++ * queue(since we use priority queue here). The procedure should also
++ * update the meta date in ``rq'' structure.
++ *
++ * proc->time_slice denotes the time slices allocation for the
++ * process, which should set to rq->max_time_slice.
++ * 
++ * hint: see libs/skew_heap.h for routines of the priority
++ * queue structures.
++ */
+ static void
+-RR_dequeue(struct run_queue *rq, struct proc_struct *proc) {
+-    assert(!list_empty(&(proc->run_link)) && proc->rq == rq);
+-    list_del_init(&(proc->run_link));
+-    rq->proc_num --;
++stride_enqueue(struct run_queue *rq, struct proc_struct *proc) {
++     /* LAB6: 2010011358
++      * (1) insert the proc into rq correctly
++      * NOTICE: you can use skew_heap or list. Important functions
++      *         skew_heap_insert: insert a entry into skew_heap
++      *         list_add_before: insert  a entry into the last of list   
++      * (2) recalculate proc->time_slice
++      * (3) set proc->rq pointer to rq
++      * (4) increase rq->proc_num
++      */
++	rq->lab6_run_pool = skew_heap_insert(rq->lab6_run_pool, &(proc->lab6_run_pool), proc_stride_comp_f);
++	proc->time_slice = rq->max_time_slice;
++	proc->rq = rq;
++	rq->proc_num++;
+ }
+ 
++/*
++ * stride_dequeue removes the process ``proc'' from the run-queue
++ * ``rq'', the operation would be finished by the skew_heap_remove
++ * operations. Remember to update the ``rq'' structure.
++ *
++ * hint: see libs/skew_heap.h for routines of the priority
++ * queue structures.
++ */
++static void
++stride_dequeue(struct run_queue *rq, struct proc_struct *proc) {
++     /* LAB6: 2010011358
++      * (1) remove the proc from rq correctly
++      * NOTICE: you can use skew_heap or list. Important functions
++      *         skew_heap_remove: remove a entry from skew_heap
++      *         list_del_init: remove a entry from the  list
++      */
++	rq->lab6_run_pool = skew_heap_remove(rq->lab6_run_pool, &(proc->lab6_run_pool), proc_stride_comp_f);
++	rq->proc_num--;
++}
++/*
++ * stride_pick_next pick the element from the ``run-queue'', with the
++ * minimum value of stride, and returns the corresponding process
++ * pointer. The process pointer would be calculated by macro le2proc,
++ * see kern/process/proc.h for definition. Return NULL if
++ * there is no process in the queue.
++ *
++ * When one proc structure is selected, remember to update the stride
++ * property of the proc. (stride += BIG_STRIDE / priority)
++ *
++ * hint: see libs/skew_heap.h for routines of the priority
++ * queue structures.
++ */
+ static struct proc_struct *
+-RR_pick_next(struct run_queue *rq) {
+-    list_entry_t *le = list_next(&(rq->run_list));
+-    if (le != &(rq->run_list)) {
+-        return le2proc(le, run_link);
+-    }
+-    return NULL;
++stride_pick_next(struct run_queue *rq) {
++     /* LAB6: 2010011358
++      * (1) get a  proc_struct pointer p  with the minimum value of stride
++             (1.1) If using skew_heap, we can use le2proc get the p from rq->lab6_run_pool
++             (1.2) If using list, we have to search list to find the p with minimum stride value
++      * (2) update p;s stride value: p->lab6_stride
++      * (3) return p
++      */
++	struct proc_struct * p = NULL;
++	if (rq->lab6_run_pool){
++		p = le2proc(rq->lab6_run_pool, lab6_run_pool);
++		p->lab6_stride += (BIG_STRIDE / p->lab6_priority);
++	}
++	return p;
+ }
+ 
++/*
++ * stride_proc_tick works with the tick event of current process. You
++ * should check whether the time slices for current process is
++ * exhausted and update the proc struct ``proc''. proc->time_slice
++ * denotes the time slices left for current
++ * process. proc->need_resched is the flag variable for process
++ * switching.
++ */
+ static void
+-RR_proc_tick(struct run_queue *rq, struct proc_struct *proc) {
+-    if (proc->time_slice > 0) {
+-        proc->time_slice --;
+-    }
+-    if (proc->time_slice == 0) {
+-        proc->need_resched = 1;
+-    }
++stride_proc_tick(struct run_queue *rq, struct proc_struct *proc) {
++     /* LAB6: YOUR CODE */
++	if (proc->time_slice > 0){
++		proc->time_slice--;
++	}
++	if (proc->time_slice == 0){
++		proc->need_resched = 1;
++	}
+ }
+ 
+ struct sched_class default_sched_class = {
+-    .name = "RR_scheduler",
+-    .init = RR_init,
+-    .enqueue = RR_enqueue,
+-    .dequeue = RR_dequeue,
+-    .pick_next = RR_pick_next,
+-    .proc_tick = RR_proc_tick,
++     .name = "stride_scheduler",
++     .init = stride_init,
++     .enqueue = stride_enqueue,
++     .dequeue = stride_dequeue,
++     .pick_next = stride_pick_next,
++     .proc_tick = stride_proc_tick,
+ };
+-
+diff -u -r ./kern/schedule/sched.c /home/ugeeker/my_ucore_lab/code/lab7/kern/schedule/sched.c
+--- ./kern/schedule/sched.c	2013-06-11 00:56:07.381404557 +0800
++++ /home/ugeeker/my_ucore_lab/code/lab7/kern/schedule/sched.c	2013-06-11 00:42:47.287614257 +0800
+@@ -49,7 +49,7 @@
+     sched_class = &default_sched_class;
+ 
+     rq = &__rq;
+-    rq->max_time_slice = 20;
++    rq->max_time_slice = MAX_TIME_SLICE;
+     sched_class->init(rq);
+ 
+     cprintf("sched class: %s\n", sched_class->name);
+diff -u -r ./kern/sync/check_sync.c /home/ugeeker/my_ucore_lab/code/lab7/kern/sync/check_sync.c
+--- ./kern/sync/check_sync.c	2013-06-11 00:56:07.381404557 +0800
++++ /home/ugeeker/my_ucore_lab/code/lab7/kern/sync/check_sync.c	2013-06-11 00:42:47.287614257 +0800
+@@ -124,6 +124,14 @@
+      // LAB7 EXERCISE1: YOUR CODE
+      // I am hungry
+      // try to get fork
++	 state_condvar[i] = HUNGRY;
++	 if ((state_condvar[LEFT] != EATING) && (state_condvar[RIGHT] != EATING)) {
++        cprintf("phi_test_condvar: state_condvar[%d] will eating\n",i);
++		 state_condvar[i] = EATING;
++	 }
++	 else{
++		 cond_wait(&(mtp->cv[i]));
++	 }
+ //--------leave routine in monitor--------------
+       if(mtp->next_count>0)
+          up(&(mtp->next));
+@@ -138,6 +146,9 @@
+      // LAB7 EXERCISE1: YOUR CODE
+      // I ate over
+      // test left and right neighbors
++	 state_condvar[i] = THINKING;
++	 phi_test_condvar(LEFT);
++	 phi_test_condvar(RIGHT);
+ //--------leave routine in monitor--------------
+      if(mtp->next_count>0)
+         up(&(mtp->next));
+@@ -151,14 +162,15 @@
+     int i, iter=0;
+     i=(int)arg;
+     cprintf("I am No.%d philosopher_condvar\n",i);
++	cprintf("Iter %d, No.%d philosopher_condvar is thinking\n",iter,i); /* thinking*/
+     while(iter++<TIMES)
+     { /* iterate*/
+-        cprintf("Iter %d, No.%d philosopher_condvar is thinking\n",iter,i); /* thinking*/
+         do_sleep(SLEEP_TIME);
+         phi_take_forks_condvar(i); 
+         /* need two forks, maybe blocked */
+         cprintf("Iter %d, No.%d philosopher_condvar is eating\n",iter,i); /* eating*/
+         do_sleep(SLEEP_TIME);
++        cprintf("Iter %d, No.%d philosopher_condvar is thinking\n",iter,i); /* thinking*/
+         phi_put_forks_condvar(i); 
+         /* return two forks back*/
+     }
+diff -u -r ./kern/sync/monitor.c /home/ugeeker/my_ucore_lab/code/lab7/kern/sync/monitor.c
+--- ./kern/sync/monitor.c	2013-06-11 00:56:07.381404557 +0800
++++ /home/ugeeker/my_ucore_lab/code/lab7/kern/sync/monitor.c	2013-06-11 00:42:47.287614257 +0800
+@@ -25,8 +25,9 @@
+ // Unlock one of threads waiting on the condition variable. 
+ void 
+ cond_signal (condvar_t *cvp) {
+-   //LAB7 EXERCISE1: YOUR CODE
++   //LAB7 EXERCISE1: 2010011358
+    cprintf("cond_signal begin: cvp %x, cvp->count %d, cvp->owner->next_count %d\n", cvp, cvp->count, cvp->owner->next_count);  
++   struct monitor* mon = cvp->owner;
+   /*
+    *      cond_signal(cv) {
+    *          if(cv.count>0) {
+@@ -37,6 +38,12 @@
+    *          }
+    *       }
+    */
++   if (cvp->count > 0){
++	   mon->next_count ++;
++	   up(&(cvp->sem));
++	   down(&(mon->next));
++	   mon->next_count --;
++   }
+    cprintf("cond_signal end: cvp %x, cvp->count %d, cvp->owner->next_count %d\n", cvp, cvp->count, cvp->owner->next_count);
+ }
+ 
+@@ -44,8 +51,9 @@
+ // mutex and suspends calling thread on conditional variable after waking up locks mutex. Notice: mp is mutex semaphore for monitor's procedures
+ void
+ cond_wait (condvar_t *cvp) {
+-    //LAB7 EXERCISE1: YOUR CODE
++    //LAB7 EXERCISE1: 2010011358
+     cprintf("cond_wait begin:  cvp %x, cvp->count %d, cvp->owner->next_count %d\n", cvp, cvp->count, cvp->owner->next_count);
++   struct monitor* mon = cvp->owner;
+    /*
+     *         cv.count ++;
+     *         if(mt.next_count>0)
+@@ -55,5 +63,14 @@
+     *         wait(cv.sem);
+     *         cv.count --;
+     */
++   cvp->count ++;
++   if (mon->next_count > 0){
++	   up(&(mon->next));
++   }
++   else{
++	   up(&(mon->mutex));
++   }
++   down(&(cvp->sem));
++   cvp->count --;
+     cprintf("cond_wait end:  cvp %x, cvp->count %d, cvp->owner->next_count %d\n", cvp, cvp->count, cvp->owner->next_count);
+ }
+diff -u -r ./kern/trap/trap.c /home/ugeeker/my_ucore_lab/code/lab7/kern/trap/trap.c
+--- ./kern/trap/trap.c	2013-06-11 00:56:07.381404557 +0800
++++ /home/ugeeker/my_ucore_lab/code/lab7/kern/trap/trap.c	2013-06-11 00:42:47.287614257 +0800
+@@ -42,7 +42,7 @@
+ /* idt_init - initialize IDT to each of the entry points in kern/trap/vectors.S */
+ void
+ idt_init(void) {
+-     /* LAB1 YOUR CODE : STEP 2 */
++     /* LAB1 2010011358 : STEP 2 */
+      /* (1) Where are the entry addrs of each Interrupt Service Routine (ISR)?
+       *     All ISR's entry addrs are stored in __vectors. where is uintptr_t __vectors[] ?
+       *     __vectors[] is in kern/trap/vector.S which is produced by tools/vector.c
+@@ -54,9 +54,17 @@
+       *     You don't know the meaning of this instruction? just google it! and check the libs/x86.h to know more.
+       *     Notice: the argument of lidt is idt_pd. try to find it!
+       */
+-     /* LAB5 YOUR CODE */ 
++	extern uintptr_t __vectors[];
++	int i;
++	for (i = 0; i < sizeof(idt) / sizeof(struct gatedesc); i++){
++		SETGATE(idt[i], 0 ,GD_KTEXT ,__vectors[i], DPL_KERNEL);
++	}
++     /* LAB5 2010011358 */ 
+      //you should update your lab1 code (just add ONE or TWO lines of code), let user app to use syscall to get the service of ucore
+      //so you should setup the syscall interrupt gate in here
++	SETGATE(idt[T_SYSCALL], 1, GD_KTEXT, __vectors[T_SYSCALL], DPL_USER);
++
++	lidt(&idt_pd);
+ }
+ 
+ static const char *
+@@ -214,13 +222,13 @@
+     LAB3 : If some page replacement algorithm(such as CLOCK PRA) need tick to change the priority of pages,
+     then you can add code here. 
+ #endif
+-        /* LAB1 YOUR CODE : STEP 3 */
++        /* LAB1 2010011358: STEP 3 */
+         /* handle the timer interrupt */
+         /* (1) After a timer interrupt, you should record this event using a global variable (increase it), such as ticks in kern/driver/clock.c
+          * (2) Every TICK_NUM cycle, you can print some info using a funciton, such as print_ticks().
+          * (3) Too Simple? Yes, I think so!
+          */
+-        /* LAB5 YOUR CODE */
++        /* LAB5 2010011358 */
+         /* you should upate you lab1 code (just add ONE or TWO lines of code):
+          *    Every TICK_NUM cycle, you should set current process's current->need_resched = 1
+          */
+@@ -232,6 +240,9 @@
+          *    Every tick, you should update the system time, iterate the timers, and trigger the timers which are end to call scheduler.
+          *    You can use one funcitons to finish all these things.
+          */
++		ticks += 1;
++		run_timer_list();
++
+         break;
+     case IRQ_OFFSET + IRQ_COM1:
+         c = cons_getc();
+diff -u -r ./tools/grade.sh /home/ugeeker/my_ucore_lab/code/lab7/tools/grade.sh
+--- ./tools/grade.sh	2013-06-11 00:56:07.381404557 +0800
++++ /home/ugeeker/my_ucore_lab/code/lab7/tools/grade.sh	2013-06-11 00:42:47.287614257 +0800
+@@ -338,7 +338,7 @@
+     'PDE(001) fac00000-fb000000 00400000 -rw'                   \
+     '  |-- PTE(000e0) faf00000-fafe0000 000e0000 urw'           \
+     '  |-- PTE(00001) fafeb000-fafec000 00001000 -rw'		\
+-    'check_slob() succeeded!'					\
++    'check_slob() success'					\
+     'check_vma_struct() succeeded!'                             \
+     'page fault at 0x00000100: K/W [no page found].'            \
+     'check_pgfault() succeeded!'                                \

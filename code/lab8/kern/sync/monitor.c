@@ -25,8 +25,9 @@ monitor_init (monitor_t * mtp, size_t num_cv) {
 // Unlock one of threads waiting on the condition variable. 
 void 
 cond_signal (condvar_t *cvp) {
-   //LAB7 EXERCISE1: YOUR CODE
+   //LAB7 EXERCISE1: 2010011358
    cprintf("cond_signal begin: cvp %x, cvp->count %d, cvp->owner->next_count %d\n", cvp, cvp->count, cvp->owner->next_count);  
+   struct monitor* mon = cvp->owner;
   /*
    *      cond_signal(cv) {
    *          if(cv.count>0) {
@@ -37,6 +38,12 @@ cond_signal (condvar_t *cvp) {
    *          }
    *       }
    */
+   if (cvp->count > 0){
+	   mon->next_count ++;
+	   up(&(cvp->sem));
+	   down(&(mon->next));
+	   mon->next_count --;
+   }
    cprintf("cond_signal end: cvp %x, cvp->count %d, cvp->owner->next_count %d\n", cvp, cvp->count, cvp->owner->next_count);
 }
 
@@ -44,8 +51,9 @@ cond_signal (condvar_t *cvp) {
 // mutex and suspends calling thread on conditional variable after waking up locks mutex. Notice: mp is mutex semaphore for monitor's procedures
 void
 cond_wait (condvar_t *cvp) {
-    //LAB7 EXERCISE1: YOUR CODE
+    //LAB7 EXERCISE1: 2010011358
     cprintf("cond_wait begin:  cvp %x, cvp->count %d, cvp->owner->next_count %d\n", cvp, cvp->count, cvp->owner->next_count);
+   struct monitor* mon = cvp->owner;
    /*
     *         cv.count ++;
     *         if(mt.next_count>0)
@@ -55,5 +63,14 @@ cond_wait (condvar_t *cvp) {
     *         wait(cv.sem);
     *         cv.count --;
     */
+   cvp->count ++;
+   if (mon->next_count > 0){
+	   up(&(mon->next));
+   }
+   else{
+	   up(&(mon->mutex));
+   }
+   down(&(cvp->sem));
+   cvp->count --;
     cprintf("cond_wait end:  cvp %x, cvp->count %d, cvp->owner->next_count %d\n", cvp, cvp->count, cvp->owner->next_count);
 }
